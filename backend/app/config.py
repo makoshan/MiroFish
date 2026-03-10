@@ -48,11 +48,13 @@ class Config:
         else os.environ.get('LLM_MODEL_NAME')
     ) or os.environ.get('LLM_MODEL_NAME') or os.environ.get('ANTHROPIC_MODEL') or 'gpt-4o-mini'
     LLM_TRUST_ENV = os.environ.get('LLM_TRUST_ENV', 'false' if LLM_API_STYLE == 'anthropic' else 'true').lower() == 'true'
-    ZEP_TRUST_ENV = os.environ.get('ZEP_TRUST_ENV', 'false').lower() == 'true'
-    ZEP_TIMEOUT_SECONDS = float(os.environ.get('ZEP_TIMEOUT_SECONDS', '60'))
-    
-    # Zep配置
-    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    GRAPHITI_TRUST_ENV = os.environ.get('GRAPHITI_TRUST_ENV', os.environ.get('ZEP_TRUST_ENV', 'false')).lower() == 'true'
+    GRAPHITI_TIMEOUT_SECONDS = float(os.environ.get('GRAPHITI_TIMEOUT_SECONDS', os.environ.get('ZEP_TIMEOUT_SECONDS', '60')))
+
+    # Graphiti 配置
+    GRAPHITI_BASE_URL = os.environ.get('GRAPHITI_BASE_URL', 'http://localhost:8000')
+    GRAPHITI_API_KEY = os.environ.get('GRAPHITI_API_KEY') or os.environ.get('ZEP_API_KEY')
+    GRAPHITI_THREAD_API_ENABLED = os.environ.get('GRAPHITI_THREAD_API_ENABLED', 'true').lower() == 'true'
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -88,7 +90,7 @@ class Config:
         errors = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
+        if not cls.GRAPHITI_API_KEY:
+            errors.append('GRAPHITI_API_KEY 未配置')
         return errors
 

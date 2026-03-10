@@ -7,7 +7,6 @@ import time
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 
-from zep_cloud.client import Zep
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -80,9 +79,9 @@ class ZepEntityReader:
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
+        self.api_key = api_key or Config.GRAPHITI_API_KEY
         if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
+            raise ValueError("GRAPHITI_API_KEY 未配置")
         
         self.client = create_zep_client(self.api_key)
     

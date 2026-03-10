@@ -122,10 +122,19 @@ LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
 
-# Zep Cloud Configuration
-# Free monthly quota is sufficient for simple usage: https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
+# Graphiti Configuration (self-hosted or managed)
+# Free monthly quota is sufficient for simple usage: Graphiti service endpoint
+GRAPHITI_API_KEY=your_graphiti_api_key
+GRAPHITI_BASE_URL=http://localhost:8000
+# Optional: enable thread API compatibility for AI memory sessions
+GRAPHITI_THREAD_API_ENABLED=true
 ```
+
+
+
+> Neo4j is optional at the Graphiti deployment layer:
+> - You can use a managed/existing Graphiti service (only `GRAPHITI_API_KEY` + `GRAPHITI_BASE_URL` are required here).
+> - If you self-host Graphiti with Neo4j, configure Neo4j on the Graphiti service side (this repo does not ship Docker orchestration for that).
 
 #### 2. Install Dependencies
 
