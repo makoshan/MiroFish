@@ -49,7 +49,7 @@ class Config:
     ) or os.environ.get('LLM_MODEL_NAME') or os.environ.get('ANTHROPIC_MODEL') or 'gpt-4o-mini'
     LLM_TRUST_ENV = os.environ.get('LLM_TRUST_ENV', 'false' if LLM_API_STYLE == 'anthropic' else 'true').lower() == 'true'
     GRAPHITI_TRUST_ENV = os.environ.get('GRAPHITI_TRUST_ENV', os.environ.get('ZEP_TRUST_ENV', 'false')).lower() == 'true'
-    GRAPHITI_TIMEOUT_SECONDS = float(os.environ.get('GRAPHITI_TIMEOUT_SECONDS', os.environ.get('ZEP_TIMEOUT_SECONDS', '60')))
+    GRAPHITI_TIMEOUT_SECONDS = float(os.environ.get('GRAPHITI_TIMEOUT_SECONDS', os.environ.get('ZEP_TIMEOUT_SECONDS', '900')))
 
     # Graphiti 配置
     GRAPHITI_BASE_URL = os.environ.get('GRAPHITI_BASE_URL', 'http://localhost:8000')
@@ -62,11 +62,11 @@ class Config:
     ALLOWED_EXTENSIONS = {'pdf', 'md', 'txt', 'markdown'}
     
     # 文本处理配置
-    DEFAULT_CHUNK_SIZE = 500  # 默认切块大小
-    DEFAULT_CHUNK_OVERLAP = 50  # 默认重叠大小
+    DEFAULT_CHUNK_SIZE = 1500  # 默认切块大小
+    DEFAULT_CHUNK_OVERLAP = 150  # 默认重叠大小
     
     # OASIS模拟配置
-    OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '10'))
+    OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '25'))
     OASIS_SIMULATION_DATA_DIR = os.path.join(os.path.dirname(__file__), '../uploads/simulations')
     
     # OASIS平台可用动作配置

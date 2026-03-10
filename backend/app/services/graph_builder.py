@@ -9,6 +9,7 @@ import time
 import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import httpx
 from ..utils.graph_client import EpisodeData
@@ -219,6 +220,55 @@ class GraphBuilderService:
                 edges=edges or None,
             )
 
+    @staticmethod
+    def _is_rate_limited_error(exc: Exception) -> bool:
+        """Detect provider-side rate limiting through wrapped HTTP/application errors."""
+        seen: set[int] = set()
+        current: Exception | None = exc
+        while current and id(current) not in seen:
+            seen.add(id(current))
+            if isinstance(current, httpx.HTTPStatusError):
+                status_code = getattr(getattr(current, "response", None), "status_code", None)
+                if status_code == 429:
+                    return True
+            message = str(current).lower()
+            if "rate limit" in message or "too many requests" in message:
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
+    def _add_episode_with_retry(
+        self,
+        graph_id: str,
+        episode: EpisodeData,
+        *,
+        batch_num: int,
+        total_batches: int,
+        chunk_num: int,
+        chunk_total: int,
+        progress: float,
+        progress_callback: Optional[Callable] = None,
+        max_attempts: int = 4,
+        base_delay_seconds: int = 15,
+    ):
+        """Send one episode with bounded retry/backoff for provider rate limits."""
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self.client.graph.add_batch(
+                    graph_id=graph_id,
+                    episodes=[episode],
+                )
+            except Exception as e:
+                if not self._is_rate_limited_error(e) or attempt == max_attempts:
+                    raise
+                delay = min(90, base_delay_seconds * (2 ** (attempt - 1)))
+                if progress_callback:
+                    progress_callback(
+                        f"批次 {batch_num}/{total_batches} 第 {chunk_num}/{chunk_total} 块触发限流，{delay}秒后重试 ({attempt}/{max_attempts - 1})...",
+                        progress,
+                    )
+                time.sleep(delay)
+
     def add_text_batches(
         self,
         graph_id: str,
@@ -241,30 +291,31 @@ class GraphBuilderService:
                     f"发送第 {batch_num}/{total_batches} 批数据 ({len(batch_chunks)} 块)...",
                     progress
                 )
-            
-            # 构建episode数据
-            episodes = [
-                EpisodeData(data=chunk, type="text")
-                for chunk in batch_chunks
-            ]
-            
-            # 发送到 Graphiti
+
+            # 逐块发送，避免批次部分成功后重试造成重复写入。
             try:
-                batch_result = self.client.graph.add_batch(
-                    graph_id=graph_id,
-                    episodes=episodes
-                )
-                
-                # 收集返回的 episode uuid
-                if batch_result and isinstance(batch_result, list):
-                    for ep in batch_result:
-                        ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
-                        if ep_uuid:
-                            episode_uuids.append(ep_uuid)
-                
-                # 避免请求过快
-                time.sleep(1)
-                
+                for chunk_index, chunk in enumerate(batch_chunks, start=1):
+                    chunk_progress = (i + chunk_index - 1) / total_chunks if total_chunks > 0 else 0
+                    batch_result = self._add_episode_with_retry(
+                        graph_id=graph_id,
+                        episode=EpisodeData(data=chunk, type="text"),
+                        batch_num=batch_num,
+                        total_batches=total_batches,
+                        chunk_num=chunk_index,
+                        chunk_total=len(batch_chunks),
+                        progress=chunk_progress,
+                        progress_callback=progress_callback,
+                    )
+
+                    if batch_result and isinstance(batch_result, list):
+                        for ep in batch_result:
+                            ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
+                            if ep_uuid:
+                                episode_uuids.append(ep_uuid)
+
+                    # 避免请求过快
+                    time.sleep(1)
+
             except Exception as e:
                 if progress_callback:
                     progress_callback(f"批次 {batch_num} 发送失败: {str(e)}", 0)
@@ -381,7 +432,7 @@ class GraphBuilderService:
                 "name": node.name,
                 "labels": node.labels or [],
                 "summary": node.summary or "",
-                "attributes": node.attributes or {},
+                "attributes": self._json_safe(node.attributes or {}),
                 "created_at": created_at,
             })
         
@@ -412,7 +463,7 @@ class GraphBuilderService:
                 "target_node_uuid": edge.target_node_uuid,
                 "source_node_name": node_map.get(edge.source_node_uuid, ""),
                 "target_node_name": node_map.get(edge.target_node_uuid, ""),
-                "attributes": edge.attributes or {},
+                "attributes": self._json_safe(edge.attributes or {}),
                 "created_at": str(created_at) if created_at else None,
                 "valid_at": str(valid_at) if valid_at else None,
                 "invalid_at": str(invalid_at) if invalid_at else None,
@@ -427,8 +478,25 @@ class GraphBuilderService:
             "node_count": len(nodes_data),
             "edge_count": len(edges_data),
         }
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if isinstance(value, SimpleNamespace):
+            return {
+                key: GraphBuilderService._json_safe(val)
+                for key, val in vars(value).items()
+            }
+        if isinstance(value, dict):
+            return {
+                str(key): GraphBuilderService._json_safe(val)
+                for key, val in value.items()
+            }
+        if isinstance(value, list):
+            return [GraphBuilderService._json_safe(item) for item in value]
+        if isinstance(value, tuple):
+            return [GraphBuilderService._json_safe(item) for item in value]
+        return value
     
     def delete_graph(self, graph_id: str):
         """删除图谱"""
         self.client.graph.delete(graph_id=graph_id)
-

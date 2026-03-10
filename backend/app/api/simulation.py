@@ -1499,8 +1499,10 @@ def start_simulation():
         enable_graph_memory_update = data.get('enable_graph_memory_update', False)  # 可选：是否启用图谱记忆更新
         force = data.get('force', False)  # 可选：强制重新开始
 
-        # 验证 max_rounds 参数
-        if max_rounds is not None:
+        # 验证 max_rounds 参数；未传时默认截断到本地调试轮数
+        if max_rounds is None:
+            max_rounds = Config.OASIS_DEFAULT_MAX_ROUNDS
+        else:
             try:
                 max_rounds = int(max_rounds)
                 if max_rounds <= 0:
@@ -1609,8 +1611,7 @@ def start_simulation():
         manager._save_simulation_state(state)
         
         response_data = run_state.to_dict()
-        if max_rounds:
-            response_data['max_rounds_applied'] = max_rounds
+        response_data['max_rounds_applied'] = max_rounds
         response_data['graph_memory_update_enabled'] = enable_graph_memory_update
         response_data['force_restarted'] = force_restarted
         if enable_graph_memory_update:

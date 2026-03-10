@@ -984,13 +984,12 @@ def _get_comment_info(
 def create_model(config: Dict[str, Any], use_boost: bool = False):
     """
     创建LLM模型
-    
-    支持双 LLM 配置，用于并行模拟时提速：
+
+    支持双 LLM 配置 + Anthropic 风格：
     - 通用配置：LLM_API_KEY, LLM_BASE_URL, LLM_MODEL_NAME
+    - Anthropic 风格：LLM_API_STYLE=anthropic, ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, ANTHROPIC_MODEL
     - 加速配置（可选）：LLM_BOOST_API_KEY, LLM_BOOST_BASE_URL, LLM_BOOST_MODEL_NAME
-    
-    如果配置了加速 LLM，并行模拟时可以让不同平台使用不同的 API 服务商，提高并发能力。
-    
+
     Args:
         config: 模拟配置字典
         use_boost: 是否使用加速 LLM 配置（如果可用）
@@ -1000,41 +999,59 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     boost_base_url = os.environ.get("LLM_BOOST_BASE_URL", "")
     boost_model = os.environ.get("LLM_BOOST_MODEL_NAME", "")
     has_boost_config = bool(boost_api_key)
-    
-    # 根据参数和配置情况选择使用哪个 LLM
+
     if use_boost and has_boost_config:
-        # 使用加速配置
+        # 加速配置始终走 OpenAI 风格
         llm_api_key = boost_api_key
         llm_base_url = boost_base_url
         llm_model = boost_model or os.environ.get("LLM_MODEL_NAME", "")
-        config_label = "[加速LLM]"
+        if not llm_model:
+            llm_model = config.get("llm_model", "gpt-4o-mini")
+        if llm_api_key:
+            os.environ["OPENAI_API_KEY"] = llm_api_key
+        if llm_base_url:
+            os.environ["OPENAI_API_BASE_URL"] = llm_base_url
+        print(f"[加速LLM] model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
+        return ModelFactory.create(
+            model_platform=ModelPlatformType.OPENAI,
+            model_type=llm_model,
+        )
+
+    llm_api_style = os.environ.get("LLM_API_STYLE", "openai").strip().lower()
+
+    if llm_api_style == "anthropic":
+        llm_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        llm_base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+        llm_model = os.environ.get("ANTHROPIC_MODEL", "")
+        if not llm_model:
+            llm_model = config.get("llm_model", "claude-3-5-sonnet-20241022")
+        if not llm_api_key:
+            raise ValueError("缺少 API Key 配置，请在 .env 中设置 ANTHROPIC_API_KEY")
+        os.environ["ANTHROPIC_API_KEY"] = llm_api_key
+        if llm_base_url:
+            os.environ["ANTHROPIC_BASE_URL"] = llm_base_url
+        print(f"[通用LLM/Anthropic] model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
+        return ModelFactory.create(
+            model_platform=ModelPlatformType.ANTHROPIC,
+            model_type=llm_model,
+        )
     else:
-        # 使用通用配置
         llm_api_key = os.environ.get("LLM_API_KEY", "")
         llm_base_url = os.environ.get("LLM_BASE_URL", "")
         llm_model = os.environ.get("LLM_MODEL_NAME", "")
-        config_label = "[通用LLM]"
-    
-    # 如果 .env 中没有模型名，则使用 config 作为备用
-    if not llm_model:
-        llm_model = config.get("llm_model", "gpt-4o-mini")
-    
-    # 设置 camel-ai 所需的环境变量
-    if llm_api_key:
-        os.environ["OPENAI_API_KEY"] = llm_api_key
-    
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件中设置 LLM_API_KEY")
-    
-    if llm_base_url:
-        os.environ["OPENAI_API_BASE_URL"] = llm_base_url
-    
-    print(f"{config_label} model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
-    
-    return ModelFactory.create(
-        model_platform=ModelPlatformType.OPENAI,
-        model_type=llm_model,
-    )
+        if not llm_model:
+            llm_model = config.get("llm_model", "gpt-4o-mini")
+        if llm_api_key:
+            os.environ["OPENAI_API_KEY"] = llm_api_key
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise ValueError("缺少 API Key 配置，请在 .env 中设置 LLM_API_KEY")
+        if llm_base_url:
+            os.environ["OPENAI_API_BASE_URL"] = llm_base_url
+        print(f"[通用LLM/OpenAI] model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
+        return ModelFactory.create(
+            model_platform=ModelPlatformType.OPENAI,
+            model_type=llm_model,
+        )
 
 
 def get_active_agents_for_round(

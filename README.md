@@ -136,6 +136,18 @@ GRAPHITI_THREAD_API_ENABLED=true
 > - 你可以直接使用托管/已有 Graphiti 服务（仅配置 `GRAPHITI_API_KEY` + `GRAPHITI_BASE_URL`）
 > - 若自建 Graphiti 且选择 Neo4j，再在 Graphiti 服务侧配置 Neo4j 连接即可（本仓库不提供 Docker 编排）
 
+#### 本地 Graphiti + Neo4j
+
+如果你需要在本机直接跑通 Graphiti 与 Neo4j，可参考：
+
+- [本地 Graphiti + Neo4j 配置指南](./docs/local-graphiti-neo4j.md)
+
+仓库内提供了一个 `local_graphiti/` 兼容服务，支持：
+
+- MiroFish 主业务 LLM 使用 Kimi（Anthropic 兼容）
+- Graphiti 抽取用 LLM 单独配置
+- Graphiti Embedding 使用独立 OpenAI 兼容 key
+
 #### 2. 安装依赖
 
 ```bash

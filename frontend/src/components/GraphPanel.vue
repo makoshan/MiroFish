@@ -785,7 +785,7 @@ const renderGraph = () => {
 
 watch(() => props.graphData, () => {
   nextTick(renderGraph)
-}, { deep: true })
+})
 
 // 监听边标签显示开关
 watch(showEdgeLabels, (newVal) => {

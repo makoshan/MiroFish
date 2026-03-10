@@ -32,15 +32,26 @@ httpx_mod = types.ModuleType("httpx")
 
 
 class DummyResponse:
-    def __init__(self, payload, content=True):
+    def __init__(self, payload, content=True, *, status_error=False, text=""):
         self._payload = payload
         self.content = b"1" if content else b""
+        self.text = text
+        self.status_error = status_error
 
     def raise_for_status(self):
+        if self.status_error:
+            raise DummyHTTPStatusError("boom", request={"path": "x"}, response=self)
         return None
 
     def json(self):
         return self._payload
+
+
+class DummyHTTPStatusError(Exception):
+    def __init__(self, message, request=None, response=None):
+        super().__init__(message)
+        self.request = request
+        self.response = response
 
 
 class DummyClient:
@@ -80,6 +91,7 @@ class DummyClient:
 
 
 httpx_mod.Client = DummyClient
+httpx_mod.HTTPStatusError = DummyHTTPStatusError
 sys.modules["httpx"] = httpx_mod
 
 spec = importlib.util.spec_from_file_location("app.utils.graph_client", ROOT / "app" / "utils" / "graph_client.py")
@@ -130,6 +142,21 @@ assert single_thread.thread_id == "t-123"
 client.thread.delete("t-123")
 assert DummyClient.requests[-1][0] == "DELETE"
 assert DummyClient.requests[-1][1] == "/v1/threads/t-123"
+
+# Error body is preserved in raised status errors
+failing_http = mod._GraphitiHTTP("k1")
+failing_http._client = types.SimpleNamespace(
+    request=lambda *args, **kwargs: DummyResponse(
+        {"detail": "bad upstream"},
+        status_error=True,
+        text='{"detail":"bad upstream"}',
+    )
+)
+try:
+    failing_http.request("POST", "/v1/fail")
+    raise AssertionError("expected HTTP status error")
+except DummyHTTPStatusError as exc:
+    assert 'Response body: {"detail":"bad upstream"}' in str(exc)
 
 # low-level resource closing
 client.close()

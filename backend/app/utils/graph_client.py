@@ -48,7 +48,14 @@ class _GraphitiHTTP:
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         resp = self._client.request(method, path, **kwargs)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text.strip() if exc.response is not None else ""
+            if detail:
+                message = f"{exc}. Response body: {detail[:500]}"
+                raise httpx.HTTPStatusError(message, request=exc.request, response=exc.response) from exc
+            raise
         if not resp.content:
             return None
         return resp.json()

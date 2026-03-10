@@ -136,6 +136,18 @@ GRAPHITI_THREAD_API_ENABLED=true
 > - You can use a managed/existing Graphiti service (only `GRAPHITI_API_KEY` + `GRAPHITI_BASE_URL` are required here).
 > - If you self-host Graphiti with Neo4j, configure Neo4j on the Graphiti service side (this repo does not ship Docker orchestration for that).
 
+#### Local Graphiti + Neo4j
+
+If you want to run Graphiti and Neo4j fully on your machine, see:
+
+- [Local Graphiti + Neo4j Setup Guide](./docs/local-graphiti-neo4j.md)
+
+This repository now includes a `local_graphiti/` compatibility service that supports:
+
+- Kimi as the main MiroFish LLM path
+- A separate LLM configuration for Graphiti extraction
+- A separate OpenAI-compatible embedding key for Graphiti vectorization
+
 #### 2. Install Dependencies
 
 ```bash

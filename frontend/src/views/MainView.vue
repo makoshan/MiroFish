@@ -108,6 +108,8 @@ const systemLogs = ref([])
 // Polling timers
 let pollTimer = null
 let graphPollTimer = null
+let graphFetchInFlight = false
+let lastGraphFingerprint = ''
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -290,30 +292,64 @@ const startBuildGraph = async () => {
 }
 
 const startGraphPolling = () => {
+  if (graphPollTimer) {
+    return
+  }
   addLog('Started polling for graph data...')
   fetchGraphData()
   graphPollTimer = setInterval(fetchGraphData, 10000)
 }
 
 const fetchGraphData = async () => {
+  if (graphFetchInFlight || document.hidden) {
+    return
+  }
+
   try {
-    // Refresh project info to check for graph_id
-    const projRes = await getProject(currentProjectId.value)
-    if (projRes.success && projRes.data.graph_id) {
-      const gRes = await getGraphData(projRes.data.graph_id)
-      if (gRes.success) {
-        graphData.value = gRes.data
-        const nodeCount = gRes.data.node_count || gRes.data.nodes?.length || 0
-        const edgeCount = gRes.data.edge_count || gRes.data.edges?.length || 0
+    graphFetchInFlight = true
+
+    let graphId = projectData.value?.graph_id
+    if (!graphId) {
+      const projRes = await getProject(currentProjectId.value)
+      if (projRes.success) {
+        projectData.value = projRes.data
+        graphId = projRes.data.graph_id
+      }
+    }
+
+    if (!graphId) {
+      return
+    }
+
+    const gRes = await getGraphData(graphId)
+    if (gRes.success) {
+      const nextGraphData = gRes.data
+      const nodeCount = nextGraphData.node_count || nextGraphData.nodes?.length || 0
+      const edgeCount = nextGraphData.edge_count || nextGraphData.edges?.length || 0
+      const fingerprint = JSON.stringify({
+        nodeCount,
+        edgeCount,
+        nodeIds: (nextGraphData.nodes || []).map(node => node.uuid),
+        edgeIds: (nextGraphData.edges || []).map(edge => edge.uuid)
+      })
+
+      if (fingerprint !== lastGraphFingerprint) {
+        graphData.value = nextGraphData
+        lastGraphFingerprint = fingerprint
         addLog(`Graph data refreshed. Nodes: ${nodeCount}, Edges: ${edgeCount}`)
       }
     }
   } catch (err) {
     console.warn('Graph fetch error:', err)
+  } finally {
+    graphFetchInFlight = false
   }
 }
 
 const startPollingTask = (taskId) => {
+  if (pollTimer) {
+    return
+  }
   pollTaskStatus(taskId)
   pollTimer = setInterval(() => pollTaskStatus(taskId), 2000)
 }
@@ -361,6 +397,14 @@ const loadGraph = async (graphId) => {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
+      const nodeCount = res.data.node_count || res.data.nodes?.length || 0
+      const edgeCount = res.data.edge_count || res.data.edges?.length || 0
+      lastGraphFingerprint = JSON.stringify({
+        nodeCount,
+        edgeCount,
+        nodeIds: (res.data.nodes || []).map(node => node.uuid),
+        edgeIds: (res.data.edges || []).map(edge => edge.uuid)
+      })
       addLog('Graph data loaded successfully.')
     } else {
       addLog(`Failed to load graph data: ${res.error}`)
@@ -394,11 +438,19 @@ const stopGraphPolling = () => {
   }
 }
 
+const handleVisibilityChange = () => {
+  if (!document.hidden && graphPollTimer) {
+    fetchGraphData()
+  }
+}
+
 onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   initProject()
 })
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   stopPolling()
   stopGraphPolling()
 })
