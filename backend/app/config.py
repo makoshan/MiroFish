@@ -11,10 +11,10 @@ from dotenv import load_dotenv
 project_root_env = os.path.join(os.path.dirname(__file__), '../../.env')
 
 if os.path.exists(project_root_env):
-    load_dotenv(project_root_env, override=True)
+    load_dotenv(project_root_env, override=False)
 else:
     # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
-    load_dotenv(override=True)
+    load_dotenv(override=False)
 
 
 class Config:
@@ -27,10 +27,29 @@ class Config:
     # JSON配置 - 禁用ASCII转义，让中文直接显示（而不是 \uXXXX 格式）
     JSON_AS_ASCII = False
     
-    # LLM配置（统一使用OpenAI格式）
-    LLM_API_KEY = os.environ.get('LLM_API_KEY')
-    LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
-    LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    # LLM配置（支持 OpenAI / Anthropic 兼容接口）
+    _HAS_ANTHROPIC_ENV = bool(os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('ANTHROPIC_BASE_URL'))
+    LLM_API_STYLE = os.environ.get('LLM_API_STYLE') or os.environ.get('LLM_PROVIDER') or (
+        'anthropic' if _HAS_ANTHROPIC_ENV else 'openai'
+    )
+    LLM_API_KEY = (
+        os.environ.get('ANTHROPIC_API_KEY')
+        if LLM_API_STYLE == 'anthropic'
+        else os.environ.get('LLM_API_KEY')
+    ) or os.environ.get('LLM_API_KEY') or os.environ.get('ANTHROPIC_API_KEY')
+    LLM_BASE_URL = (
+        os.environ.get('ANTHROPIC_BASE_URL')
+        if LLM_API_STYLE == 'anthropic'
+        else os.environ.get('LLM_BASE_URL')
+    ) or os.environ.get('LLM_BASE_URL') or os.environ.get('ANTHROPIC_BASE_URL') or 'https://api.openai.com/v1'
+    LLM_MODEL_NAME = (
+        os.environ.get('ANTHROPIC_MODEL')
+        if LLM_API_STYLE == 'anthropic'
+        else os.environ.get('LLM_MODEL_NAME')
+    ) or os.environ.get('LLM_MODEL_NAME') or os.environ.get('ANTHROPIC_MODEL') or 'gpt-4o-mini'
+    LLM_TRUST_ENV = os.environ.get('LLM_TRUST_ENV', 'false' if LLM_API_STYLE == 'anthropic' else 'true').lower() == 'true'
+    ZEP_TRUST_ENV = os.environ.get('ZEP_TRUST_ENV', 'false').lower() == 'true'
+    ZEP_TIMEOUT_SECONDS = float(os.environ.get('ZEP_TIMEOUT_SECONDS', '60'))
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')

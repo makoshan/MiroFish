@@ -1,14 +1,14 @@
 """
 LLM客户端封装
-统一使用OpenAI格式调用
+统一通过兼容层支持 OpenAI / Anthropic 两种接口风格
 """
 
 import json
 import re
 from typing import Optional, Dict, Any, List
-from openai import OpenAI
 
 from ..config import Config
+from .compat_llm import CompatibleLLMClient
 
 
 class LLMClient:
@@ -27,9 +27,11 @@ class LLMClient:
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
         
-        self.client = OpenAI(
+        self.client = CompatibleLLMClient(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            model=self.model,
+            api_style=Config.LLM_API_STYLE,
         )
     
     def chat(
@@ -51,18 +53,12 @@ class LLMClient:
         Returns:
             模型响应文本
         """
-        kwargs = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        
-        if response_format:
-            kwargs["response_format"] = response_format
-        
-        response = self.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content
+        content = self.client.chat(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+        )
         # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
         return content

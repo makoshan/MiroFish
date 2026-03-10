@@ -15,11 +15,12 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from openai import OpenAI
 from zep_cloud.client import Zep
 
 from ..config import Config
+from ..utils.compat_llm import CompatibleLLMClient
 from ..utils.logger import get_logger
+from ..utils.zep_client import create_zep_client
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
@@ -192,9 +193,11 @@ class OasisProfileGenerator:
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
         
-        self.client = OpenAI(
+        self.client = CompatibleLLMClient(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            model=self.model_name,
+            api_style=Config.LLM_API_STYLE,
         )
         
         # Zep客户端用于检索丰富上下文
@@ -204,7 +207,7 @@ class OasisProfileGenerator:
         
         if self.zep_api_key:
             try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
+                self.zep_client = create_zep_client(self.zep_api_key)
             except Exception as e:
                 logger.warning(f"Zep客户端初始化失败: {e}")
     
@@ -526,21 +529,20 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
+                response = self.client.create_chat_completion(
                     messages=[
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
+                    temperature=0.7 - (attempt * 0.1),  # 每次重试降低温度
                     # 不设置max_tokens，让LLM自由发挥
                 )
                 
-                content = response.choices[0].message.content
+                content = response.content
                 
                 # 检查是否被截断（finish_reason不是'stop'）
-                finish_reason = response.choices[0].finish_reason
+                finish_reason = response.finish_reason
                 if finish_reason == 'length':
                     logger.warning(f"LLM输出被截断 (attempt {attempt+1}), 尝试修复...")
                     content = self._fix_truncated_json(content)

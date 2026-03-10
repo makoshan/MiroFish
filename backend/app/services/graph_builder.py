@@ -10,12 +10,13 @@ import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 
-from zep_cloud.client import Zep
+import httpx
 from zep_cloud import EpisodeData, EntityEdgeSourceTarget
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
+from ..utils.zep_client import create_zep_client
 from .text_processor import TextProcessor
 
 
@@ -47,7 +48,7 @@ class GraphBuilderService:
         if not self.api_key:
             raise ValueError("ZEP_API_KEY 未配置")
         
-        self.client = Zep(api_key=self.api_key)
+        self.client = create_zep_client(self.api_key)
         self.task_manager = TaskManager()
     
     def build_graph_async(
@@ -187,13 +188,23 @@ class GraphBuilderService:
     def create_graph(self, name: str) -> str:
         """创建Zep图谱（公开方法）"""
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
-        
-        self.client.graph.create(
-            graph_id=graph_id,
-            name=name,
-            description="MiroFish Social Simulation Graph"
-        )
-        
+
+        max_attempts = 3
+        delay = 2.0
+        for attempt in range(max_attempts):
+            try:
+                self.client.graph.create(
+                    graph_id=graph_id,
+                    name=name,
+                    description="MiroFish Social Simulation Graph"
+                )
+                return graph_id
+            except (httpx.HTTPError, ConnectionError, TimeoutError, OSError):
+                if attempt == max_attempts - 1:
+                    raise
+                time.sleep(delay)
+                delay *= 2
+
         return graph_id
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
