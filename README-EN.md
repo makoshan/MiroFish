@@ -132,8 +132,9 @@ GRAPHITI_THREAD_API_ENABLED=true
 
 
 
-> For self-hosted Graphiti + Neo4j (long-term AI memory backend), run:
-> `docker compose -f docker-compose.graphiti.yml up -d`
+> Neo4j is optional at the Graphiti deployment layer:
+> - You can use a managed/existing Graphiti service (only `GRAPHITI_API_KEY` + `GRAPHITI_BASE_URL` are required here).
+> - If you self-host Graphiti with Neo4j, configure Neo4j on the Graphiti service side (this repo does not ship Docker orchestration for that).
 
 #### 2. Install Dependencies
 

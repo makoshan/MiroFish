@@ -132,8 +132,9 @@ GRAPHITI_THREAD_API_ENABLED=true
 
 
 
-> 如需自托管 Graphiti + Neo4j（用于构建长期 AI 记忆系统），可使用：
-> `docker compose -f docker-compose.graphiti.yml up -d`
+> Neo4j 为 Graphiti 部署层可选项：
+> - 你可以直接使用托管/已有 Graphiti 服务（仅配置 `GRAPHITI_API_KEY` + `GRAPHITI_BASE_URL`）
+> - 若自建 Graphiti 且选择 Neo4j，再在 Graphiti 服务侧配置 Neo4j 连接即可（本仓库不提供 Docker 编排）
 
 #### 2. 安装依赖
 
