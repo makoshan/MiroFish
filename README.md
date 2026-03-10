@@ -122,10 +122,18 @@ LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
 
-# Zep Cloud 配置
-# 每月免费额度即可支撑简单使用：https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
+# Graphiti 配置（自托管或托管服务）
+# 每月免费额度即可支撑简单使用：Graphiti 服务地址（示例）
+GRAPHITI_API_KEY=your_graphiti_api_key
+GRAPHITI_BASE_URL=http://localhost:8000
+# 可选：启用 Thread API 兼容层（用于未来 AI 记忆会话管理）
+GRAPHITI_THREAD_API_ENABLED=true
 ```
+
+
+
+> 如需自托管 Graphiti + Neo4j（用于构建长期 AI 记忆系统），可使用：
+> `docker compose -f docker-compose.graphiti.yml up -d`
 
 #### 2. 安装依赖
 

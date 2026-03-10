@@ -15,7 +15,6 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from zep_cloud.client import Zep
 
 from ..config import Config
 from ..utils.compat_llm import CompatibleLLMClient
@@ -201,7 +200,7 @@ class OasisProfileGenerator:
         )
         
         # Zep客户端用于检索丰富上下文
-        self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
+        self.zep_api_key = zep_api_key or Config.GRAPHITI_API_KEY
         self.zep_client = None
         self.graph_id = graph_id
         
@@ -221,7 +220,7 @@ class OasisProfileGenerator:
         从Zep实体生成OASIS Agent Profile
         
         Args:
-            entity: Zep实体节点
+            entity: Any实体节点
             user_id: 用户ID（用于OASIS）
             use_llm: 是否使用LLM生成详细人设
             
