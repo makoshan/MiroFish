@@ -25,10 +25,10 @@ cd backend && uv run pytest tests/
 uv run pytest tests/test_graphiti_client_contract_standalone.py  # Contract tests (no external deps)
 ```
 
-### Local Graphiti + Neo4j
+### Graphiti-Zep (Knowledge Graph API)
 ```bash
 # Required for graph memory features in local dev:
-cd local_graphiti && uv run uvicorn graphiti_compat.app:app --host 127.0.0.1 --port 8000
+cd graphiti-zep && uv run graphiti-zep
 ```
 
 ## Architecture
@@ -51,8 +51,8 @@ MiroFish is a multi-agent swarm simulation engine. Users upload seed documents, 
 - **`api/`**: Axios clients for graph/simulation/report with 5-minute timeout and retry logic
 - `GraphPanel.vue`: D3.js interactive knowledge graph visualization
 
-### `local_graphiti/`
-A local FastAPI compatibility service that implements the Graphiti/Zep HTTP protocol backed by Neo4j. Use when running without a managed Graphiti service.
+### `graphiti-zep/`
+Standalone Zep-compatible knowledge graph API backed by Graphiti + Neo4j. Separate open-source project ([GitHub](https://github.com/makoshan/graphiti-zep)).
 
 ## Configuration
 
