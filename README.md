@@ -136,17 +136,29 @@ GRAPHITI_THREAD_API_ENABLED=true
 > - 你可以直接使用托管/已有 Graphiti 服务（仅配置 `GRAPHITI_API_KEY` + `GRAPHITI_BASE_URL`）
 > - 若自建 Graphiti 且选择 Neo4j，再在 Graphiti 服务侧配置 Neo4j 连接即可（本仓库不提供 Docker 编排）
 
-#### 本地 Graphiti + Neo4j
+#### 本地化方案：Graphiti-Zep（替代 Zep Cloud）
 
-如果你需要在本机直接跑通 Graphiti 与 Neo4j，可参考：
+MiroFish 提供完全本地化的知识图谱方案，使用 [Graphiti-Zep](https://github.com/makoshan/graphiti-zep) + Neo4j 替代 Zep Cloud，无需依赖任何云服务：
 
-- [本地 Graphiti + Neo4j 配置指南](./docs/local-graphiti-neo4j.md)
+```bash
+# 1. 安装并启动 Neo4j（Docker 或本地安装）
+cd graphiti-zep && docker-compose up -d
 
-仓库内提供了一个 `local_graphiti/` 兼容服务，支持：
+# 2. 配置 graphiti-zep/.env（LLM、Embedding、Neo4j 连接信息）
+cp graphiti-zep/.env.example graphiti-zep/.env
 
-- MiroFish 主业务 LLM 使用 Kimi（Anthropic 兼容）
-- Graphiti 抽取用 LLM 单独配置
-- Graphiti Embedding 使用独立 OpenAI 兼容 key
+# 3. 启动 Graphiti-Zep 服务
+cd graphiti-zep && uv sync && uv run graphiti-zep
+```
+
+Graphiti-Zep 是 Zep Cloud 知识图谱 API 的本地替代，支持：
+
+- **Zep 兼容 REST API** — 与 Zep Cloud 相同的接口，MiroFish 无缝切换
+- **任意 LLM** — Kimi、Claude（Anthropic 兼容）、Qwen、Moonshot（OpenAI 兼容）等
+- **完全自托管** — 数据全部存储在本地 Neo4j，无需外部云服务
+- **自动重试** — 速率限制和超时自动退避重试
+
+详细配置参考：[本地 Graphiti + Neo4j 配置指南](./docs/local-graphiti-neo4j.md) | [Graphiti-Zep 项目文档](https://github.com/makoshan/graphiti-zep)
 
 #### 2. 安装依赖
 

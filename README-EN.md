@@ -136,17 +136,29 @@ GRAPHITI_THREAD_API_ENABLED=true
 > - You can use a managed/existing Graphiti service (only `GRAPHITI_API_KEY` + `GRAPHITI_BASE_URL` are required here).
 > - If you self-host Graphiti with Neo4j, configure Neo4j on the Graphiti service side (this repo does not ship Docker orchestration for that).
 
-#### Local Graphiti + Neo4j
+#### Local Alternative: Graphiti-Zep (Replaces Zep Cloud)
 
-If you want to run Graphiti and Neo4j fully on your machine, see:
+MiroFish provides a fully local knowledge graph solution using [Graphiti-Zep](https://github.com/makoshan/graphiti-zep) + Neo4j as a drop-in replacement for Zep Cloud — no external cloud services required:
 
-- [Local Graphiti + Neo4j Setup Guide](./docs/local-graphiti-neo4j.md)
+```bash
+# 1. Start Neo4j (Docker or local install)
+cd graphiti-zep && docker-compose up -d
 
-This repository now includes a `local_graphiti/` compatibility service that supports:
+# 2. Configure graphiti-zep/.env (LLM, Embedding, Neo4j)
+cp graphiti-zep/.env.example graphiti-zep/.env
 
-- Kimi as the main MiroFish LLM path
-- A separate LLM configuration for Graphiti extraction
-- A separate OpenAI-compatible embedding key for Graphiti vectorization
+# 3. Start the Graphiti-Zep service
+cd graphiti-zep && uv sync && uv run graphiti-zep
+```
+
+Graphiti-Zep is a self-hosted replacement for Zep Cloud's knowledge graph API:
+
+- **Zep-compatible REST API** — same endpoints as Zep Cloud, seamless switching for MiroFish
+- **Any LLM provider** — Kimi, Claude (Anthropic-compatible), Qwen, Moonshot (OpenAI-compatible), etc.
+- **Fully self-hosted** — all data stays in your local Neo4j, no cloud dependency
+- **Auto-retry** — exponential backoff on rate limits and timeouts
+
+See: [Local Graphiti + Neo4j Guide](./docs/local-graphiti-neo4j.md) | [Graphiti-Zep Docs](https://github.com/makoshan/graphiti-zep)
 
 #### 2. Install Dependencies
 
