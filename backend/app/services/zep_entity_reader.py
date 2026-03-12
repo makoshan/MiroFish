@@ -4,6 +4,7 @@ Zep实体读取与过滤服务
 """
 
 import time
+from types import SimpleNamespace
 from typing import Dict, Any, List, Optional, Set, Callable, TypeVar
 from dataclasses import dataclass, field
 
@@ -401,7 +402,7 @@ class ZepEntityReader:
                 name=node.name or "",
                 labels=node.labels or [],
                 summary=node.summary or "",
-                attributes=node.attributes or {},
+                attributes=vars(node.attributes) if isinstance(node.attributes, SimpleNamespace) else (node.attributes or {}),
                 related_edges=related_edges,
                 related_nodes=related_nodes,
             )

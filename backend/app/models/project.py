@@ -46,8 +46,8 @@ class Project:
     
     # 配置
     simulation_requirement: Optional[str] = None
-    chunk_size: int = 500
-    chunk_overlap: int = 50
+    chunk_size: int = 1000
+    chunk_overlap: int = 100
     
     # 错误信息
     error: Optional[str] = None
@@ -302,4 +302,3 @@ class ProjectManager:
             for f in os.listdir(files_dir) 
             if os.path.isfile(os.path.join(files_dir, f))
         ]
-

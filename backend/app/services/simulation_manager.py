@@ -300,139 +300,182 @@ class SimulationManager:
                 self._save_simulation_state(state)
                 return state
             
-            # ========== 阶段2: 生成Agent Profile ==========
+            # ========== 阶段2: 生成Agent Profile（跳过已有） ==========
             total_entities = len(filtered.entities)
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_profiles", 0, 
-                    "开始生成...",
-                    current=0,
-                    total=total_entities
-                )
-            
-            # 传入graph_id以启用Zep检索功能，获取更丰富的上下文
-            generator = OasisProfileGenerator(graph_id=state.graph_id)
-            
-            def profile_progress(current, total, msg):
+
+            # Check if profiles already exist from a previous run
+            reddit_path = os.path.join(sim_dir, "reddit_profiles.json")
+            twitter_path = os.path.join(sim_dir, "twitter_profiles.csv")
+            existing_profiles = None
+            if os.path.exists(reddit_path):
+                try:
+                    import json as _json
+                    with open(reddit_path, 'r', encoding='utf-8') as f:
+                        existing_profiles = _json.load(f)
+                    if len(existing_profiles) >= total_entities:
+                        logger.info("跳过人设生成：已有 %d 个profiles（共需 %d 个）",
+                                    len(existing_profiles), total_entities)
+                        if progress_callback:
+                            progress_callback(
+                                "generating_profiles", 100,
+                                f"已有完整人设，跳过生成（{len(existing_profiles)}个）",
+                                current=total_entities,
+                                total=total_entities
+                            )
+                        profiles = existing_profiles
+                except Exception:
+                    existing_profiles = None
+
+            if existing_profiles is None:
                 if progress_callback:
                     progress_callback(
-                        "generating_profiles", 
-                        int(current / total * 100), 
-                        msg,
-                        current=current,
-                        total=total,
-                        item_name=msg
+                        "generating_profiles", 0,
+                        "开始生成...",
+                        current=0,
+                        total=total_entities
                     )
-            
-            # 设置实时保存的文件路径（优先使用 Reddit JSON 格式）
-            realtime_output_path = None
-            realtime_platform = "reddit"
-            if state.enable_reddit:
-                realtime_output_path = os.path.join(sim_dir, "reddit_profiles.json")
+
+                # 传入graph_id以启用Zep检索功能，获取更丰富的上下文
+                generator = OasisProfileGenerator(graph_id=state.graph_id)
+
+                def profile_progress(current, total, msg):
+                    if progress_callback:
+                        progress_callback(
+                            "generating_profiles",
+                            int(current / total * 100),
+                            msg,
+                            current=current,
+                            total=total,
+                            item_name=msg
+                        )
+
+                # 设置实时保存的文件路径（优先使用 Reddit JSON 格式）
+                realtime_output_path = None
                 realtime_platform = "reddit"
-            elif state.enable_twitter:
-                realtime_output_path = os.path.join(sim_dir, "twitter_profiles.csv")
-                realtime_platform = "twitter"
-            
-            profiles = generator.generate_profiles_from_entities(
-                entities=filtered.entities,
-                use_llm=use_llm_for_profiles,
-                progress_callback=profile_progress,
-                graph_id=state.graph_id,  # 传入graph_id用于Zep检索
-                parallel_count=parallel_profile_count,  # 并行生成数量
-                realtime_output_path=realtime_output_path,  # 实时保存路径
-                output_platform=realtime_platform  # 输出格式
-            )
+                if state.enable_reddit:
+                    realtime_output_path = reddit_path
+                    realtime_platform = "reddit"
+                elif state.enable_twitter:
+                    realtime_output_path = twitter_path
+                    realtime_platform = "twitter"
+
+                profiles = generator.generate_profiles_from_entities(
+                    entities=filtered.entities,
+                    use_llm=use_llm_for_profiles,
+                    progress_callback=profile_progress,
+                    graph_id=state.graph_id,  # 传入graph_id用于Zep检索
+                    parallel_count=parallel_profile_count,  # 并行生成数量
+                    realtime_output_path=realtime_output_path,  # 实时保存路径
+                    output_platform=realtime_platform  # 输出格式
+                )
             
             state.profiles_count = len(profiles)
-            
-            # 保存Profile文件（注意：Twitter使用CSV格式，Reddit使用JSON格式）
-            # Reddit 已经在生成过程中实时保存了，这里再保存一次确保完整性
+
+            # 保存Profile文件（仅在新生成时保存，缓存跳过时文件已存在）
+            if existing_profiles is None:
+                if progress_callback:
+                    progress_callback(
+                        "generating_profiles", 95,
+                        "保存Profile文件...",
+                        current=total_entities,
+                        total=total_entities
+                    )
+
+                if state.enable_reddit:
+                    generator.save_profiles(
+                        profiles=profiles,
+                        file_path=os.path.join(sim_dir, "reddit_profiles.json"),
+                        platform="reddit"
+                    )
+
+                if state.enable_twitter:
+                    # Twitter使用CSV格式！这是OASIS的要求
+                    generator.save_profiles(
+                        profiles=profiles,
+                        file_path=os.path.join(sim_dir, "twitter_profiles.csv"),
+                        platform="twitter"
+                    )
+
             if progress_callback:
                 progress_callback(
-                    "generating_profiles", 95, 
-                    "保存Profile文件...",
-                    current=total_entities,
-                    total=total_entities
-                )
-            
-            if state.enable_reddit:
-                generator.save_profiles(
-                    profiles=profiles,
-                    file_path=os.path.join(sim_dir, "reddit_profiles.json"),
-                    platform="reddit"
-                )
-            
-            if state.enable_twitter:
-                # Twitter使用CSV格式！这是OASIS的要求
-                generator.save_profiles(
-                    profiles=profiles,
-                    file_path=os.path.join(sim_dir, "twitter_profiles.csv"),
-                    platform="twitter"
-                )
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_profiles", 100, 
+                    "generating_profiles", 100,
                     f"完成，共 {len(profiles)} 个Profile",
                     current=len(profiles),
                     total=len(profiles)
                 )
             
-            # ========== 阶段3: LLM智能生成模拟配置 ==========
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 0, 
-                    "正在分析模拟需求...",
-                    current=0,
-                    total=3
-                )
-            
-            config_generator = SimulationConfigGenerator()
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 30, 
-                    "正在调用LLM生成配置...",
-                    current=1,
-                    total=3
-                )
-            
-            sim_params = config_generator.generate_config(
-                simulation_id=simulation_id,
-                project_id=state.project_id,
-                graph_id=state.graph_id,
-                simulation_requirement=simulation_requirement,
-                document_text=document_text,
-                entities=filtered.entities,
-                enable_twitter=state.enable_twitter,
-                enable_reddit=state.enable_reddit
-            )
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 70, 
-                    "正在保存配置文件...",
-                    current=2,
-                    total=3
-                )
-            
-            # 保存配置文件
+            # ========== 阶段3: LLM智能生成模拟配置（跳过已有） ==========
             config_path = os.path.join(sim_dir, "simulation_config.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(sim_params.to_json())
-            
-            state.config_generated = True
-            state.config_reasoning = sim_params.generation_reasoning
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_config", 100, 
-                    "配置生成完成",
-                    current=3,
-                    total=3
+            existing_config = None
+            if os.path.exists(config_path) and state.config_generated:
+                try:
+                    import json as _json
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        _json.load(f)  # validate JSON
+                    existing_config = True
+                    logger.info("跳过配置生成：已有 simulation_config.json")
+                    if progress_callback:
+                        progress_callback(
+                            "generating_config", 100,
+                            "已有完整配置，跳过生成",
+                            current=3,
+                            total=3
+                        )
+                except Exception:
+                    existing_config = None
+
+            if existing_config is None:
+                if progress_callback:
+                    progress_callback(
+                        "generating_config", 0,
+                        "正在分析模拟需求...",
+                        current=0,
+                        total=3
+                    )
+
+                config_generator = SimulationConfigGenerator()
+
+                if progress_callback:
+                    progress_callback(
+                        "generating_config", 30,
+                        "正在调用LLM生成配置...",
+                        current=1,
+                        total=3
+                    )
+
+                sim_params = config_generator.generate_config(
+                    simulation_id=simulation_id,
+                    project_id=state.project_id,
+                    graph_id=state.graph_id,
+                    simulation_requirement=simulation_requirement,
+                    document_text=document_text,
+                    entities=filtered.entities,
+                    enable_twitter=state.enable_twitter,
+                    enable_reddit=state.enable_reddit
                 )
+
+                if progress_callback:
+                    progress_callback(
+                        "generating_config", 70,
+                        "正在保存配置文件...",
+                        current=2,
+                        total=3
+                    )
+
+                # 保存配置文件
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    f.write(sim_params.to_json())
+
+                state.config_generated = True
+                state.config_reasoning = sim_params.generation_reasoning
+
+                if progress_callback:
+                    progress_callback(
+                        "generating_config", 100,
+                        "配置生成完成",
+                        current=3,
+                        total=3
+                    )
             
             # 注意：运行脚本保留在 backend/scripts/ 目录，不再复制到模拟目录
             # 启动模拟时，simulation_runner 会从 scripts/ 目录运行脚本

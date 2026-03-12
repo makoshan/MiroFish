@@ -18,6 +18,7 @@ config_mod = types.ModuleType("app.config")
 class Config:
     GRAPHITI_BASE_URL = "http://localhost:8000"
     GRAPHITI_TIMEOUT_SECONDS = 60
+    GRAPHITI_INGEST_TIMEOUT_SECONDS = 180
     GRAPHITI_TRUST_ENV = False
 
 

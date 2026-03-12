@@ -423,9 +423,29 @@ def prepare_simulation():
         # 检查是否强制重新生成
         force_regenerate = data.get('force_regenerate', False)
         logger.info(f"开始处理 /prepare 请求: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
-        
+
         # 检查是否已经准备完成（避免重复生成）
         if not force_regenerate:
+            # 如果状态已完成或正在运行，不要重复触发
+            # 注意：PREPARING 不在此列表中，因为可能是上次中断残留的状态，需要允许重新触发
+            skip_statuses = {
+                SimulationStatus.READY,
+                SimulationStatus.RUNNING,
+                SimulationStatus.PAUSED,
+                SimulationStatus.COMPLETED,
+            }
+            if state.status in skip_statuses:
+                logger.info(f"模拟 {simulation_id} 状态为 {state.status.value}，跳过重复 prepare")
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "simulation_id": simulation_id,
+                        "status": state.status.value,
+                        "message": f"模拟状态为 {state.status.value}，无需重新准备",
+                        "already_prepared": state.status != SimulationStatus.PREPARING
+                    }
+                })
+
             logger.debug(f"检查模拟 {simulation_id} 是否已准备完成...")
             is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
             logger.debug(f"检查结果: is_prepared={is_prepared}, prepare_info={prepare_info}")

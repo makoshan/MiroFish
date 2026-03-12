@@ -149,13 +149,13 @@ GRAPHITI_TIMEOUT_SECONDS=60
 GRAPHITI_THREAD_API_ENABLED=true
 ```
 
-如果 MiroFish 主业务 LLM 也使用 Kimi，可继续保留：
+如果 MiroFish 主业务 LLM 走本地 `pi` 代理，可使用：
 
 ```env
-LLM_API_STYLE=anthropic
-ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
-ANTHROPIC_API_KEY=your_kimi_key
-ANTHROPIC_MODEL=kimi-for-coding
+LLM_API_STYLE=openai
+LLM_API_KEY=pi-proxy-local
+LLM_BASE_URL=http://127.0.0.1:8002
+LLM_MODEL_NAME=gpt-5.1
 LLM_TRUST_ENV=false
 ```
 

@@ -101,6 +101,26 @@ class FakeGraph:
         return [types.SimpleNamespace(uuid_="ep-1")]
 
 
+class TimeoutGraph:
+    def __init__(self):
+        self.calls = 0
+
+    def add_batch(self, graph_id, episodes):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("504 Gateway Timeout from upstream")
+        return [types.SimpleNamespace(uuid_="ep-timeout")]
+
+
+class SlowGraph:
+    def __init__(self):
+        self.calls = 0
+
+    def add_batch(self, graph_id, episodes):
+        self.calls += 1
+        return [types.SimpleNamespace(uuid_="ep-slow")]
+
+
 service = mod.GraphBuilderService.__new__(mod.GraphBuilderService)
 service.client = types.SimpleNamespace(graph=FakeGraph())
 
@@ -117,7 +137,63 @@ result = service.add_text_batches(
 
 assert result == ["ep-1"]
 assert service.client.graph.calls == 2
-assert sleep_calls == [15, 1]
-assert any("触发限流" in message for message, _ in messages)
+assert sleep_calls == [15]
+assert any("超时或限流" in message for message, _ in messages)
+
+sleep_calls.clear()
+messages.clear()
+
+timeout_service = mod.GraphBuilderService.__new__(mod.GraphBuilderService)
+timeout_service.client = types.SimpleNamespace(graph=TimeoutGraph())
+timeout_result = timeout_service.add_text_batches(
+    graph_id="g-2",
+    chunks=["hello again"],
+    batch_size=1,
+    progress_callback=lambda message, progress: messages.append((message, progress)),
+)
+
+assert timeout_result == ["ep-timeout"]
+assert timeout_service.client.graph.calls == 2
+assert 15 in sleep_calls
+assert any("超时或限流" in message for message, _ in messages)
+
+messages.clear()
+
+
+class FakeFuture:
+    def __init__(self):
+        self.calls = 0
+
+    def result(self, timeout=None):
+        self.calls += 1
+        if self.calls == 1:
+            raise mod.concurrent.futures.TimeoutError()
+        return [types.SimpleNamespace(uuid_="ep-slow")]
+
+
+class FakeExecutor:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def submit(self, fn, **kwargs):
+        return FakeFuture()
+
+
+mod.concurrent.futures.ThreadPoolExecutor = lambda max_workers=1: FakeExecutor()
+
+slow_service = mod.GraphBuilderService.__new__(mod.GraphBuilderService)
+slow_service.client = types.SimpleNamespace(graph=SlowGraph())
+slow_result = slow_service.add_text_batches(
+    graph_id="g-3",
+    chunks=["slow chunk"],
+    batch_size=1,
+    progress_callback=lambda message, progress: messages.append((message, progress)),
+)
+
+assert slow_result == ["ep-slow"]
+assert any("处理中，已等待" in message for message, _ in messages)
 
 print("ok")

@@ -7,6 +7,7 @@ import os
 import uuid
 import time
 import threading
+import concurrent.futures
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -51,14 +52,46 @@ class GraphBuilderService:
         
         self.client = create_zep_client(self.api_key)
         self.task_manager = TaskManager()
-    
+
+    def _call_add_batch_with_heartbeat(
+        self,
+        graph_id: str,
+        episode: EpisodeData,
+        *,
+        batch_num: int,
+        total_batches: int,
+        chunk_num: int,
+        chunk_total: int,
+        progress: float,
+        progress_callback: Optional[Callable] = None,
+        heartbeat_seconds: int = 10,
+    ):
+        """Run one blocking add_batch call while periodically reporting liveness."""
+        started_at = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                self.client.graph.add_batch,
+                graph_id=graph_id,
+                episodes=[episode],
+            )
+            while True:
+                try:
+                    return future.result(timeout=heartbeat_seconds)
+                except concurrent.futures.TimeoutError:
+                    if progress_callback:
+                        elapsed = int(time.time() - started_at)
+                        progress_callback(
+                            f"批次 {batch_num}/{total_batches} 第 {chunk_num}/{chunk_total} 块处理中，已等待 {elapsed}秒...",
+                            progress,
+                        )
+
     def build_graph_async(
         self,
         text: str,
         ontology: Dict[str, Any],
         graph_name: str = "MiroFish Graph",
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 100,
         batch_size: int = 3
     ) -> str:
         """
@@ -221,18 +254,20 @@ class GraphBuilderService:
             )
 
     @staticmethod
-    def _is_rate_limited_error(exc: Exception) -> bool:
-        """Detect provider-side rate limiting through wrapped HTTP/application errors."""
+    def _is_retryable_ingest_error(exc: Exception) -> bool:
+        """Detect provider-side ingest errors worth retrying at the task layer."""
         seen: set[int] = set()
         current: Exception | None = exc
         while current and id(current) not in seen:
             seen.add(id(current))
             if isinstance(current, httpx.HTTPStatusError):
                 status_code = getattr(getattr(current, "response", None), "status_code", None)
-                if status_code == 429:
+                if status_code in (429, 504):
                     return True
             message = str(current).lower()
             if "rate limit" in message or "too many requests" in message:
+                return True
+            if "timed out" in message or "timeout" in message or "gateway timeout" in message:
                 return True
             current = current.__cause__ or current.__context__
         return False
@@ -251,20 +286,31 @@ class GraphBuilderService:
         max_attempts: int = 4,
         base_delay_seconds: int = 15,
     ):
-        """Send one episode with bounded retry/backoff for provider rate limits."""
+        """Send one episode with bounded retry/backoff for upstream timeout/rate-limit errors."""
         for attempt in range(1, max_attempts + 1):
             try:
-                return self.client.graph.add_batch(
+                if progress_callback:
+                    progress_callback(
+                        f"发送批次 {batch_num}/{total_batches} 第 {chunk_num}/{chunk_total} 块...",
+                        progress,
+                    )
+                return self._call_add_batch_with_heartbeat(
                     graph_id=graph_id,
-                    episodes=[episode],
+                    episode=episode,
+                    batch_num=batch_num,
+                    total_batches=total_batches,
+                    chunk_num=chunk_num,
+                    chunk_total=chunk_total,
+                    progress=progress,
+                    progress_callback=progress_callback,
                 )
             except Exception as e:
-                if not self._is_rate_limited_error(e) or attempt == max_attempts:
+                if not self._is_retryable_ingest_error(e) or attempt == max_attempts:
                     raise
                 delay = min(90, base_delay_seconds * (2 ** (attempt - 1)))
                 if progress_callback:
                     progress_callback(
-                        f"批次 {batch_num}/{total_batches} 第 {chunk_num}/{chunk_total} 块触发限流，{delay}秒后重试 ({attempt}/{max_attempts - 1})...",
+                        f"批次 {batch_num}/{total_batches} 第 {chunk_num}/{chunk_total} 块超时或限流，{delay}秒后重试 ({attempt}/{max_attempts - 1})...",
                         progress,
                     )
                 time.sleep(delay)
@@ -274,53 +320,48 @@ class GraphBuilderService:
         graph_id: str,
         chunks: List[str],
         batch_size: int = 3,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        max_workers: int = 4,
     ) -> List[str]:
-        """分批添加文本到图谱，返回所有 episode 的 uuid 列表"""
+        """分批添加文本到图谱，返回所有 episode 的 uuid 列表。
+
+        顺序逐块发送，避免并发导致的超时问题。
+        """
         episode_uuids = []
         total_chunks = len(chunks)
-        
-        for i in range(0, total_chunks, batch_size):
-            batch_chunks = chunks[i:i + batch_size]
-            batch_num = i // batch_size + 1
+
+        if progress_callback:
+            progress_callback(f"开始顺序发送 {total_chunks} 块数据...", 0)
+
+        for idx, chunk in enumerate(chunks):
+            batch_num = idx // batch_size + 1
             total_batches = (total_chunks + batch_size - 1) // batch_size
-            
-            if progress_callback:
-                progress = (i + len(batch_chunks)) / total_chunks
-                progress_callback(
-                    f"发送第 {batch_num}/{total_batches} 批数据 ({len(batch_chunks)} 块)...",
-                    progress
-                )
-
-            # 逐块发送，避免批次部分成功后重试造成重复写入。
             try:
-                for chunk_index, chunk in enumerate(batch_chunks, start=1):
-                    chunk_progress = (i + chunk_index - 1) / total_chunks if total_chunks > 0 else 0
-                    batch_result = self._add_episode_with_retry(
-                        graph_id=graph_id,
-                        episode=EpisodeData(data=chunk, type="text"),
-                        batch_num=batch_num,
-                        total_batches=total_batches,
-                        chunk_num=chunk_index,
-                        chunk_total=len(batch_chunks),
-                        progress=chunk_progress,
-                        progress_callback=progress_callback,
+                result = self._add_episode_with_retry(
+                    graph_id=graph_id,
+                    episode=EpisodeData(data=chunk, type="text"),
+                    batch_num=batch_num,
+                    total_batches=total_batches,
+                    chunk_num=(idx % batch_size) + 1,
+                    chunk_total=min(batch_size, total_chunks - (batch_num - 1) * batch_size),
+                    progress=idx / total_chunks if total_chunks > 0 else 0,
+                    progress_callback=progress_callback,
+                )
+                if result and isinstance(result, list):
+                    for ep in result:
+                        ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
+                        if ep_uuid:
+                            episode_uuids.append(ep_uuid)
+                if progress_callback:
+                    progress_callback(
+                        f"已完成 {idx + 1}/{total_chunks} 块...",
+                        (idx + 1) / total_chunks,
                     )
-
-                    if batch_result and isinstance(batch_result, list):
-                        for ep in batch_result:
-                            ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
-                            if ep_uuid:
-                                episode_uuids.append(ep_uuid)
-
-                    # 避免请求过快
-                    time.sleep(1)
-
             except Exception as e:
                 if progress_callback:
-                    progress_callback(f"批次 {batch_num} 发送失败: {str(e)}", 0)
+                    progress_callback(f"块 {idx+1}/{total_chunks} 发送失败: {str(e)}", 0)
                 raise
-        
+
         return episode_uuids
     
     def _wait_for_episodes(

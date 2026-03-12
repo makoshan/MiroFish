@@ -47,6 +47,8 @@ class _GraphitiHTTP:
         )
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        if "timeout" not in kwargs and path.endswith("/episodes:batch"):
+            kwargs["timeout"] = Config.GRAPHITI_INGEST_TIMEOUT_SECONDS
         resp = self._client.request(method, path, **kwargs)
         try:
             resp.raise_for_status()

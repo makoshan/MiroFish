@@ -211,7 +211,7 @@ class SimulationConfigGenerator:
     # 上下文最大字符数
     MAX_CONTEXT_LENGTH = 50000
     # 每批生成的Agent数量
-    AGENTS_PER_BATCH = 15
+    AGENTS_PER_BATCH = 30
     
     # 各步骤的上下文截断长度（字符数）
     TIME_CONFIG_CONTEXT_LENGTH = 10000   # 时间配置
@@ -238,6 +238,7 @@ class SimulationConfigGenerator:
             base_url=self.base_url,
             model=self.model_name,
             api_style=Config.LLM_API_STYLE,
+            timeout=600.0,  # 10 min — 102 batches of LLM calls need longer timeout
         )
     
     def generate_config(
@@ -305,25 +306,42 @@ class SimulationConfigGenerator:
         event_config = self._parse_event_config(event_config_result)
         reasoning_parts.append(f"事件配置: {event_config_result.get('reasoning', '成功')}")
         
-        # ========== 步骤3-N: 分批生成Agent配置 ==========
-        all_agent_configs = []
+        # ========== 步骤3-N: 并行分批生成Agent配置 ==========
+        all_agent_configs = [None] * len(entities)
+        PARALLEL_WORKERS = 5
+
+        # Build all batch specs
+        batch_specs = []
         for batch_idx in range(num_batches):
             start_idx = batch_idx * self.AGENTS_PER_BATCH
             end_idx = min(start_idx + self.AGENTS_PER_BATCH, len(entities))
-            batch_entities = entities[start_idx:end_idx]
-            
-            report_progress(
-                3 + batch_idx,
-                f"生成Agent配置 ({start_idx + 1}-{end_idx}/{len(entities)})..."
-            )
-            
-            batch_configs = self._generate_agent_configs_batch(
+            batch_specs.append((batch_idx, start_idx, end_idx, entities[start_idx:end_idx]))
+
+        import concurrent.futures
+
+        def _run_batch(spec):
+            b_idx, s_idx, e_idx, b_entities = spec
+            return s_idx, e_idx, self._generate_agent_configs_batch(
                 context=context,
-                entities=batch_entities,
-                start_idx=start_idx,
+                entities=b_entities,
+                start_idx=s_idx,
                 simulation_requirement=simulation_requirement
             )
-            all_agent_configs.extend(batch_configs)
+
+        completed = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as pool:
+            futures = {pool.submit(_run_batch, spec): spec for spec in batch_specs}
+            for future in concurrent.futures.as_completed(futures):
+                s_idx, e_idx, batch_configs = future.result()
+                all_agent_configs[s_idx:e_idx] = batch_configs
+                completed += 1
+                report_progress(
+                    3 + completed - 1,
+                    f"生成Agent配置 ({s_idx + 1}-{e_idx}/{len(entities)}) [完成 {completed}/{num_batches}]"
+                )
+
+        # Remove any None slots (shouldn't happen, but safe)
+        all_agent_configs = [c for c in all_agent_configs if c is not None]
         
         reasoning_parts.append(f"Agent配置: 成功生成 {len(all_agent_configs)} 个")
         
@@ -447,7 +465,7 @@ class SimulationConfigGenerator:
                     ],
                     response_format={"type": "json_object"},
                     temperature=0.7 - (attempt * 0.1),  # 每次重试降低温度
-                    # 不设置max_tokens，让LLM自由发挥
+                    max_tokens=8192,  # 足够容纳 30 个 Agent 的完整 JSON
                 )
                 
                 content = response.content

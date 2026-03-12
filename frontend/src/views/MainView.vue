@@ -105,6 +105,9 @@ const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
 
+const GRAPH_BUILD_CHUNK_SIZE = 400
+const GRAPH_BUILD_CHUNK_OVERLAP = 40
+
 // Polling timers
 let pollTimer = null
 let graphPollTimer = null
@@ -276,7 +279,11 @@ const startBuildGraph = async () => {
     buildProgress.value = { progress: 0, message: 'Starting build...' }
     addLog('Initiating graph build...')
     
-    const res = await buildGraph({ project_id: currentProjectId.value })
+    const res = await buildGraph({
+      project_id: currentProjectId.value,
+      chunk_size: GRAPH_BUILD_CHUNK_SIZE,
+      chunk_overlap: GRAPH_BUILD_CHUNK_OVERLAP
+    })
     if (res.success) {
       addLog(`Graph build task started. Task ID: ${res.data.task_id}`)
       startGraphPolling()

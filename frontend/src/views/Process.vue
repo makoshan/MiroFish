@@ -421,6 +421,9 @@ import * as d3 from 'd3'
 const route = useRoute()
 const router = useRouter()
 
+const GRAPH_BUILD_CHUNK_SIZE = 400
+const GRAPH_BUILD_CHUNK_OVERLAP = 40
+
 // 当前项目ID（可能从'new'变为实际ID）
 const currentProjectId = ref(route.params.projectId)
 
@@ -683,7 +686,11 @@ const startBuildGraph = async () => {
       message: '正在启动图谱构建...'
     }
     
-    const response = await buildGraph({ project_id: currentProjectId.value })
+    const response = await buildGraph({
+      project_id: currentProjectId.value,
+      chunk_size: GRAPH_BUILD_CHUNK_SIZE,
+      chunk_overlap: GRAPH_BUILD_CHUNK_OVERLAP
+    })
     
     if (response.success) {
       buildProgress.value.message = '图谱构建任务已启动...'

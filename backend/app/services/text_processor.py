@@ -17,8 +17,8 @@ class TextProcessor:
     @staticmethod
     def split_text(
         text: str,
-        chunk_size: int = 500,
-        overlap: int = 50
+        chunk_size: int = 1000,
+        overlap: int = 100
     ) -> List[str]:
         """
         分割文本
@@ -68,4 +68,3 @@ class TextProcessor:
             "total_lines": text.count('\n') + 1,
             "total_words": len(text.split()),
         }
-

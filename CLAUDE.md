@@ -6,14 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Setup
 ```bash
-npm run setup:all        # Install all frontend + backend dependencies
+npm run setup:all        # Install all dependencies (frontend + backend + graphiti-zep)
 npm run setup            # Frontend only
 npm run setup:backend    # Backend only (uses uv)
+npm run setup:graphiti   # graphiti-zep only (uses uv)
 ```
 
 ### Development
 ```bash
-npm run dev              # Start both frontend (port 3000) and backend (port 5001)
+npm run dev              # Start ALL services: Neo4j + pi-proxy + graphiti-zep + backend + frontend
+npm run dev:app          # Start only frontend (port 3000) and backend (port 5001)
 npm run frontend         # Frontend only
 npm run backend          # Backend only: cd backend && uv run python run.py
 npm run build            # Production build
@@ -27,7 +29,10 @@ uv run pytest tests/test_graphiti_client_contract_standalone.py  # Contract test
 
 ### Graphiti-Zep (Knowledge Graph API)
 ```bash
-# Required for graph memory features in local dev:
+# Start pi proxy first (routes LLM calls through pi CLI → Kimi Coding API):
+cd graphiti-zep && uv run python pi_proxy.py &
+
+# Then start graphiti-zep:
 cd graphiti-zep && uv run graphiti-zep
 ```
 
@@ -56,27 +61,19 @@ Standalone Zep-compatible knowledge graph API backed by Graphiti + Neo4j. Separa
 
 ## Configuration
 
-Copy `.env.example` to `.env` at the repo root. Key variables:
+**Single source of truth**: Copy `.env.example` to `.env` at the repo root. LLM config (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_NAME`) is shared by both backend and graphiti-zep — only edit it in the root `.env`.
 
 ```env
+LLM_API_STYLE=openai
 LLM_API_KEY=...
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_NAME=qwen-plus
 
-# For Anthropic-style APIs (Kimi, Claude, etc.):
-# LLM_API_STYLE=anthropic
-# ANTHROPIC_BASE_URL=...
-# ANTHROPIC_API_KEY=...
-# ANTHROPIC_MODEL=...
-
 GRAPHITI_API_KEY=local-graphiti
 GRAPHITI_BASE_URL=http://127.0.0.1:8000
 GRAPHITI_THREAD_API_ENABLED=true
-
-# Optional boost LLM (omit entirely if unused — do not leave placeholder values):
-# LLM_BOOST_API_KEY=...
-# LLM_BOOST_BASE_URL=...
-# LLM_BOOST_MODEL_NAME=...
 ```
+
+graphiti-zep has its own `graphiti-zep/.env` for Neo4j and embedding config only. LLM keys fall through to `../.env` automatically.
 
 > If `LLM_BOOST_*` keys are present but contain placeholder values, backend startup will fail. Either fill them in or remove those lines entirely.

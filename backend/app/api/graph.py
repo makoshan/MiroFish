@@ -247,6 +247,8 @@ def generate_ontology():
         })
         
     except Exception as e:
+        logger.error(f"本体生成失败: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({
             "success": False,
             "error": str(e),
@@ -265,8 +267,8 @@ def build_graph():
         {
             "project_id": "proj_xxxx",  // 必填，来自接口1
             "graph_name": "图谱名称",    // 可选
-            "chunk_size": 500,          // 可选，默认500
-            "chunk_overlap": 50         // 可选，默认50
+            "chunk_size": 1000,         // 可选，默认1000
+            "chunk_overlap": 100        // 可选，默认100
         }
         
     返回：

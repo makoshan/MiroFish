@@ -159,6 +159,12 @@ class CompatibleLLMClient:
         response.raise_for_status()
 
         body = response.json()
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        if not body.get("content"):
+            _log.warning("Anthropic API returned empty content. Full body keys: %s, stop_reason: %s",
+                         list(body.keys()), body.get("stop_reason"))
+            _log.debug("Full response body: %s", json.dumps(body, ensure_ascii=False)[:500])
         text_parts = []
         for block in body.get("content", []):
             if block.get("type") == "text" and block.get("text"):

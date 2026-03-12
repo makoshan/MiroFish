@@ -18,8 +18,29 @@ if sys.platform == 'win32':
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import urllib.request
+import urllib.error
+
 from app import create_app
 from app.config import Config
+
+
+def check_graphiti_health():
+    """检查 graphiti-zep 服务是否可达"""
+    url = Config.GRAPHITI_BASE_URL
+    try:
+        req = urllib.request.Request(url, method='GET')
+        urllib.request.urlopen(req, timeout=3)
+    except urllib.error.HTTPError:
+        # 服务在运行，只是根路径返回了错误码（如404），这是正常的
+        pass
+    except Exception as e:
+        print(f"\n⚠️  警告: graphiti-zep 服务不可达 ({url}): {e}")
+        print("   图谱构建功能将不可用。请确保:")
+        print("   1. Neo4j 已运行: brew services start neo4j")
+        print("   2. 启动全部服务: npm run dev")
+        print("   # 或手动启动 graphiti-zep:")
+        print("   cd graphiti-zep && uv run graphiti-zep\n")
 
 
 def main():
@@ -32,7 +53,10 @@ def main():
             print(f"  - {err}")
         print("\n请检查 .env 文件中的配置")
         sys.exit(1)
-    
+
+    # 检查外部服务连通性
+    check_graphiti_health()
+
     # 创建应用
     app = create_app()
     

@@ -50,6 +50,7 @@ class Config:
     LLM_TRUST_ENV = os.environ.get('LLM_TRUST_ENV', 'false' if LLM_API_STYLE == 'anthropic' else 'true').lower() == 'true'
     GRAPHITI_TRUST_ENV = os.environ.get('GRAPHITI_TRUST_ENV', os.environ.get('ZEP_TRUST_ENV', 'false')).lower() == 'true'
     GRAPHITI_TIMEOUT_SECONDS = float(os.environ.get('GRAPHITI_TIMEOUT_SECONDS', os.environ.get('ZEP_TIMEOUT_SECONDS', '900')))
+    GRAPHITI_INGEST_TIMEOUT_SECONDS = float(os.environ.get('GRAPHITI_INGEST_TIMEOUT_SECONDS', '180'))
 
     # Graphiti 配置
     GRAPHITI_BASE_URL = os.environ.get('GRAPHITI_BASE_URL', 'http://localhost:8000')
@@ -62,8 +63,8 @@ class Config:
     ALLOWED_EXTENSIONS = {'pdf', 'md', 'txt', 'markdown'}
     
     # 文本处理配置
-    DEFAULT_CHUNK_SIZE = 1500  # 默认切块大小
-    DEFAULT_CHUNK_OVERLAP = 150  # 默认重叠大小
+    DEFAULT_CHUNK_SIZE = 1000  # 默认切块大小
+    DEFAULT_CHUNK_OVERLAP = 100  # 默认重叠大小
     
     # OASIS模拟配置
     OASIS_DEFAULT_MAX_ROUNDS = int(os.environ.get('OASIS_DEFAULT_MAX_ROUNDS', '25'))
@@ -93,4 +94,3 @@ class Config:
         if not cls.GRAPHITI_API_KEY:
             errors.append('GRAPHITI_API_KEY 未配置')
         return errors
-

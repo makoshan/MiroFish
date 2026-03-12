@@ -21,6 +21,7 @@ config_mod = types.ModuleType("app.config")
 class Config:
     GRAPHITI_BASE_URL = "http://localhost:8000/"
     GRAPHITI_TIMEOUT_SECONDS = 60
+    GRAPHITI_INGEST_TIMEOUT_SECONDS = 180
     GRAPHITI_TRUST_ENV = False
 
 
@@ -118,6 +119,7 @@ added = client.graph.add_batch("g-1", episodes)
 assert added[0].uuid_ == "ep-1"
 add_call = [c for c in DummyClient.requests if c[1].endswith("/episodes:batch")][-1]
 assert add_call[2]["json"]["episodes"][1]["type"] == "note"
+assert add_call[2]["timeout"] == 180
 
 search = client.graph.search(graph_id="g-1", query="alice")
 assert search.facts[0].fact == "a->b"
