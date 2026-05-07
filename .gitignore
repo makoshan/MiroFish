@@ -62,3 +62,4 @@ data/
 
 # graphiti-zep (separate repo: https://github.com/makoshan/graphiti-zep)
 graphiti-zep/
+.collaborator

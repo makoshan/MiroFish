@@ -37,9 +37,10 @@ graph_client_mod = types.ModuleType("app.utils.graph_client")
 
 
 class EpisodeData:
-    def __init__(self, data: str, type: str = "text"):
+    def __init__(self, data: str, type: str = "text", source_description: str | None = None):
         self.data = data
         self.type = type
+        self.source_description = source_description
 
 
 graph_client_mod.EpisodeData = EpisodeData
@@ -182,16 +183,19 @@ class FakeExecutor:
         return FakeFuture()
 
 
+original_executor = mod.concurrent.futures.ThreadPoolExecutor
 mod.concurrent.futures.ThreadPoolExecutor = lambda max_workers=1: FakeExecutor()
-
-slow_service = mod.GraphBuilderService.__new__(mod.GraphBuilderService)
-slow_service.client = types.SimpleNamespace(graph=SlowGraph())
-slow_result = slow_service.add_text_batches(
-    graph_id="g-3",
-    chunks=["slow chunk"],
-    batch_size=1,
-    progress_callback=lambda message, progress: messages.append((message, progress)),
-)
+try:
+    slow_service = mod.GraphBuilderService.__new__(mod.GraphBuilderService)
+    slow_service.client = types.SimpleNamespace(graph=SlowGraph())
+    slow_result = slow_service.add_text_batches(
+        graph_id="g-3",
+        chunks=["slow chunk"],
+        batch_size=1,
+        progress_callback=lambda message, progress: messages.append((message, progress)),
+    )
+finally:
+    mod.concurrent.futures.ThreadPoolExecutor = original_executor
 
 assert slow_result == ["ep-slow"]
 assert any("处理中，已等待" in message for message, _ in messages)

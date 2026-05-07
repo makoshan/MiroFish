@@ -20,6 +20,7 @@ from ..config import Config
 class EpisodeData:
     data: str
     type: str = "text"
+    source_description: str | None = None
 
 
 @dataclass
@@ -72,6 +73,13 @@ class _EpisodeOps:
 
     def get(self, uuid_: str):
         return _to_obj(self._http.request("GET", f"/v1/episodes/{uuid_}"))
+
+    def get_by_graph_id(self, graph_id: str, limit: int = 100, uuid_cursor: str | None = None):
+        params = {"limit": limit}
+        if uuid_cursor:
+            params["uuid_cursor"] = uuid_cursor
+        data = self._http.request("GET", f"/v1/groups/{graph_id}/episodes", params=params) or []
+        return [_to_obj(item) for item in data]
 
 
 class _NodeOps:
@@ -138,7 +146,12 @@ class _GraphOps:
             )
 
     def add_batch(self, graph_id: str, episodes: list[EpisodeData]):
-        payload = [{"content": ep.data, "type": ep.type} for ep in episodes]
+        payload = []
+        for ep in episodes:
+            item = {"content": ep.data, "type": ep.type}
+            if ep.source_description:
+                item["source_description"] = ep.source_description
+            payload.append(item)
         data = self._http.request(
             "POST",
             f"/v1/groups/{graph_id}/episodes:batch",

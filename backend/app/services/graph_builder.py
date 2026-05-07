@@ -6,6 +6,7 @@
 import os
 import uuid
 import time
+import hashlib
 import threading
 import concurrent.futures
 from typing import Dict, Any, List, Optional, Callable
@@ -52,6 +53,64 @@ class GraphBuilderService:
         
         self.client = create_zep_client(self.api_key)
         self.task_manager = TaskManager()
+
+    @staticmethod
+    def compute_text_hash(text: str) -> str:
+        """Return a stable hash for resume compatibility checks."""
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def build_chunk_id(text_hash: str, chunk_index: int, chunk: str) -> str:
+        """Return a stable per-chunk id for future graph-side reconciliation."""
+        raw = f"{text_hash}:{chunk_index}:{chunk}".encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()[:16]
+
+    @classmethod
+    def build_chunk_source_description(
+        cls,
+        *,
+        project_id: str,
+        text_hash: str,
+        chunk_index: int,
+        total_chunks: int,
+        chunk: str,
+    ) -> str:
+        chunk_id = cls.build_chunk_id(text_hash, chunk_index, chunk)
+        return (
+            "mirofish "
+            f"project={project_id} "
+            f"chunk={chunk_index}/{total_chunks} "
+            f"chunk_id={chunk_id} "
+            f"text_hash={text_hash[:16]}"
+        )
+
+    @staticmethod
+    def get_resume_start_index(
+        checkpoint: Optional[Dict[str, Any]],
+        *,
+        graph_id: str,
+        text_hash: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        total_chunks: int,
+    ) -> int:
+        """Return the next chunk index when checkpoint matches current build inputs."""
+        if not checkpoint:
+            return 0
+        if checkpoint.get("graph_id") != graph_id:
+            return 0
+        if checkpoint.get("text_hash") != text_hash:
+            return 0
+        if checkpoint.get("chunk_size") != chunk_size:
+            return 0
+        if checkpoint.get("chunk_overlap") != chunk_overlap:
+            return 0
+        if checkpoint.get("total_chunks") != total_chunks:
+            return 0
+        last_completed = checkpoint.get("last_completed_chunk_index", -1)
+        if not isinstance(last_completed, int):
+            return 0
+        return max(0, min(last_completed + 1, total_chunks))
 
     def _call_add_batch_with_heartbeat(
         self,
@@ -322,24 +381,36 @@ class GraphBuilderService:
         batch_size: int = 3,
         progress_callback: Optional[Callable] = None,
         max_workers: int = 4,
+        start_index: int = 0,
+        source_description_factory: Optional[Callable[[int, int, str], str]] = None,
+        checkpoint_callback: Optional[Callable[[int, str], None]] = None,
     ) -> List[str]:
-        """分批添加文本到图谱，返回所有 episode 的 uuid 列表。
+        """分批添加文本到图谱，返回本次发送成功的 episode uuid 列表。
 
-        顺序逐块发送，避免并发导致的超时问题。
+        顺序逐块发送，避免并发导致的超时问题。start_index 用于失败后
+        从已持久化 checkpoint 的下一块继续补跑。
         """
         episode_uuids = []
         total_chunks = len(chunks)
+        start_index = max(0, min(start_index, total_chunks))
 
         if progress_callback:
-            progress_callback(f"开始顺序发送 {total_chunks} 块数据...", 0)
+            if start_index > 0:
+                progress_callback(f"从第 {start_index + 1}/{total_chunks} 块继续发送...", start_index / total_chunks if total_chunks else 1)
+            else:
+                progress_callback(f"开始顺序发送 {total_chunks} 块数据...", 0)
 
-        for idx, chunk in enumerate(chunks):
+        for idx in range(start_index, total_chunks):
+            chunk = chunks[idx]
             batch_num = idx // batch_size + 1
             total_batches = (total_chunks + batch_size - 1) // batch_size
             try:
+                source_description = None
+                if source_description_factory:
+                    source_description = source_description_factory(idx, total_chunks, chunk)
                 result = self._add_episode_with_retry(
                     graph_id=graph_id,
-                    episode=EpisodeData(data=chunk, type="text"),
+                    episode=EpisodeData(data=chunk, type="text", source_description=source_description),
                     batch_num=batch_num,
                     total_batches=total_batches,
                     chunk_num=(idx % batch_size) + 1,
@@ -352,6 +423,8 @@ class GraphBuilderService:
                         ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
                         if ep_uuid:
                             episode_uuids.append(ep_uuid)
+                            if checkpoint_callback:
+                                checkpoint_callback(idx, ep_uuid)
                 if progress_callback:
                     progress_callback(
                         f"已完成 {idx + 1}/{total_chunks} 块...",

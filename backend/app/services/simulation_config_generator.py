@@ -238,7 +238,9 @@ class SimulationConfigGenerator:
             base_url=self.base_url,
             model=self.model_name,
             api_style=Config.LLM_API_STYLE,
-            timeout=600.0,  # 10 min — 102 batches of LLM calls need longer timeout
+            # Config generation only makes a few structured calls; fail fast enough
+            # to fall back to defaults instead of stalling the whole prepare task.
+            timeout=120.0,
         )
     
     def generate_config(
@@ -1002,4 +1004,3 @@ class SimulationConfigGenerator:
                 "influence_weight": 1.0
             }
     
-

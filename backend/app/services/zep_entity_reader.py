@@ -85,6 +85,26 @@ class ZepEntityReader:
             raise ValueError("GRAPHITI_API_KEY 未配置")
         
         self.client = create_zep_client(self.api_key)
+
+    @staticmethod
+    def _normalize_attributes(value: Any) -> Dict[str, Any]:
+        """Normalize SDK attribute payloads to plain dicts."""
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, SimpleNamespace):
+            return dict(vars(value))
+        if hasattr(value, "model_dump") and callable(value.model_dump):
+            dumped = value.model_dump()
+            return dumped if isinstance(dumped, dict) else {}
+        if hasattr(value, "__dict__"):
+            return {
+                key: val
+                for key, val in vars(value).items()
+                if not key.startswith("_")
+            }
+        return {}
     
     def _call_with_retry(
         self, 
@@ -146,7 +166,7 @@ class ZepEntityReader:
                 "name": node.name or "",
                 "labels": node.labels or [],
                 "summary": node.summary or "",
-                "attributes": node.attributes or {},
+                "attributes": self._normalize_attributes(getattr(node, "attributes", None)),
             })
 
         logger.info(f"共获取 {len(nodes_data)} 个节点")
@@ -174,7 +194,7 @@ class ZepEntityReader:
                 "fact": edge.fact or "",
                 "source_node_uuid": edge.source_node_uuid,
                 "target_node_uuid": edge.target_node_uuid,
-                "attributes": edge.attributes or {},
+                "attributes": self._normalize_attributes(getattr(edge, "attributes", None)),
             })
 
         logger.info(f"共获取 {len(edges_data)} 条边")
@@ -205,7 +225,7 @@ class ZepEntityReader:
                     "fact": edge.fact or "",
                     "source_node_uuid": edge.source_node_uuid,
                     "target_node_uuid": edge.target_node_uuid,
-                    "attributes": edge.attributes or {},
+                    "attributes": self._normalize_attributes(getattr(edge, "attributes", None)),
                 })
             
             return edges_data
@@ -434,5 +454,4 @@ class ZepEntityReader:
             enrich_with_edges=enrich_with_edges
         )
         return result.entities
-
 

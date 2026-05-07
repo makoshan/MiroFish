@@ -85,6 +85,12 @@ class DummyClient:
             return DummyResponse({"uuid_": "e-1"})
         if path.startswith("/v1/episodes/"):
             return DummyResponse({"uuid_": "ep-1", "processed": True})
+        if path.startswith("/v1/groups/") and "/episodes" in path:
+            return DummyResponse([{"uuid_": "ep-1", "source_description": "chunk_id=abc", "processed": True}])
+        if path.startswith("/v1/groups/") and "/nodes" in path:
+            return DummyResponse([{"uuid_": "n-1"}])
+        if path.startswith("/v1/groups/") and "/edges" in path:
+            return DummyResponse([{"uuid_": "e-1"}])
         return DummyResponse({"ok": True})
 
     def close(self):
@@ -114,12 +120,19 @@ client.graph.set_ontology(["g-1", "g-2"], entities={"A": {}}, edges={"R": {}})
 ontology_calls = [c for c in DummyClient.requests if c[1].endswith("/ontology")]
 assert len(ontology_calls) == 2
 
-episodes = [mod.EpisodeData(data="x"), mod.EpisodeData(data="y", type="note")]
+episodes = [mod.EpisodeData(data="x"), mod.EpisodeData(data="y", type="note", source_description="chunk_id=abc")]
 added = client.graph.add_batch("g-1", episodes)
 assert added[0].uuid_ == "ep-1"
 add_call = [c for c in DummyClient.requests if c[1].endswith("/episodes:batch")][-1]
 assert add_call[2]["json"]["episodes"][1]["type"] == "note"
+assert add_call[2]["json"]["episodes"][1]["source_description"] == "chunk_id=abc"
+assert "source_description" not in add_call[2]["json"]["episodes"][0]
 assert add_call[2]["timeout"] == 180
+
+episodes_by_graph = client.graph.episode.get_by_graph_id("g-1", limit=10)
+assert episodes_by_graph[0].source_description == "chunk_id=abc"
+episode_list_call = [c for c in DummyClient.requests if c[1] == "/v1/groups/g-1/episodes"][-1]
+assert episode_list_call[2]["params"] == {"limit": 10}
 
 search = client.graph.search(graph_id="g-1", query="alice")
 assert search.facts[0].fact == "a->b"

@@ -316,6 +316,7 @@ def build_graph():
         
         # 检查项目状态
         force = data.get('force', False)  # 强制重新构建
+        resume = data.get('resume', True)  # 默认尝试从已有 checkpoint 续跑
         
         if project.status == ProjectStatus.CREATED:
             return jsonify({
@@ -335,6 +336,7 @@ def build_graph():
             project.status = ProjectStatus.ONTOLOGY_GENERATED
             project.graph_id = None
             project.graph_build_task_id = None
+            project.graph_build_checkpoint = None
             project.error = None
         
         # 获取配置
@@ -370,6 +372,7 @@ def build_graph():
         # 更新项目状态
         project.status = ProjectStatus.GRAPH_BUILDING
         project.graph_build_task_id = task_id
+        project.error = None
         ProjectManager.save_project(project)
         
         # 启动后台任务
@@ -398,18 +401,45 @@ def build_graph():
                     overlap=chunk_overlap
                 )
                 total_chunks = len(chunks)
+                text_hash = GraphBuilderService.compute_text_hash(text)
                 
-                # 创建图谱
+                # 创建或复用图谱
                 task_manager.update_task(
                     task_id,
-                    message="创建Zep图谱...",
+                    message="准备Zep图谱...",
                     progress=10
                 )
-                graph_id = builder.create_graph(name=graph_name)
-                
-                # 更新项目的graph_id
-                project.graph_id = graph_id
-                ProjectManager.save_project(project)
+                graph_id = project.graph_id if resume and project.graph_id else None
+                start_index = 0
+                if graph_id:
+                    start_index = GraphBuilderService.get_resume_start_index(
+                        project.graph_build_checkpoint,
+                        graph_id=graph_id,
+                        text_hash=text_hash,
+                        chunk_size=chunk_size,
+                        chunk_overlap=chunk_overlap,
+                        total_chunks=total_chunks,
+                    )
+                    if start_index > 0:
+                        build_logger.info(
+                            f"[{task_id}] 复用已有图谱续跑: graph_id={graph_id}, start_index={start_index}, total_chunks={total_chunks}"
+                        )
+                    else:
+                        graph_id = None
+                if not graph_id:
+                    graph_id = builder.create_graph(name=graph_name)
+                    project.graph_id = graph_id
+                    project.graph_build_checkpoint = {
+                        "graph_id": graph_id,
+                        "text_hash": text_hash,
+                        "chunk_size": chunk_size,
+                        "chunk_overlap": chunk_overlap,
+                        "total_chunks": total_chunks,
+                        "last_completed_chunk_index": -1,
+                        "completed_episode_uuids": [],
+                        "status": "created",
+                    }
+                    ProjectManager.save_project(project)
                 
                 # 设置本体
                 task_manager.update_task(
@@ -433,12 +463,41 @@ def build_graph():
                     message=f"开始添加 {total_chunks} 个文本块...",
                     progress=15
                 )
+
+                def chunk_source_description(idx, total, chunk):
+                    return GraphBuilderService.build_chunk_source_description(
+                        project_id=project_id,
+                        text_hash=text_hash,
+                        chunk_index=idx,
+                        total_chunks=total,
+                        chunk=chunk,
+                    )
+
+                def save_chunk_checkpoint(idx, ep_uuid):
+                    checkpoint = dict(project.graph_build_checkpoint or {})
+                    completed = list(checkpoint.get("completed_episode_uuids") or [])
+                    if ep_uuid not in completed:
+                        completed.append(ep_uuid)
+                    project.graph_build_checkpoint = {
+                        "graph_id": graph_id,
+                        "text_hash": text_hash,
+                        "chunk_size": chunk_size,
+                        "chunk_overlap": chunk_overlap,
+                        "total_chunks": total_chunks,
+                        "last_completed_chunk_index": idx,
+                        "completed_episode_uuids": completed,
+                        "status": "ingesting",
+                    }
+                    ProjectManager.save_project(project)
                 
                 episode_uuids = builder.add_text_batches(
                     graph_id, 
                     chunks,
                     batch_size=3,
-                    progress_callback=add_progress_callback
+                    progress_callback=add_progress_callback,
+                    start_index=start_index,
+                    source_description_factory=chunk_source_description,
+                    checkpoint_callback=save_chunk_checkpoint,
                 )
                 
                 # 等待Zep处理完成（查询每个episode的processed状态）
@@ -468,6 +527,10 @@ def build_graph():
                 
                 # 更新项目状态
                 project.status = ProjectStatus.GRAPH_COMPLETED
+                checkpoint = dict(project.graph_build_checkpoint or {})
+                checkpoint["status"] = "completed"
+                checkpoint["last_completed_chunk_index"] = total_chunks - 1 if total_chunks else -1
+                project.graph_build_checkpoint = checkpoint
                 ProjectManager.save_project(project)
                 
                 node_count = graph_data.get("node_count", 0)
@@ -496,6 +559,10 @@ def build_graph():
                 
                 project.status = ProjectStatus.FAILED
                 project.error = str(e)
+                if project.graph_build_checkpoint:
+                    checkpoint = dict(project.graph_build_checkpoint)
+                    checkpoint["status"] = "failed"
+                    project.graph_build_checkpoint = checkpoint
                 ProjectManager.save_project(project)
                 
                 task_manager.update_task(
